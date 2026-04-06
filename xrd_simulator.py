@@ -1,293 +1,181 @@
 import math
-
+import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Arc
 import streamlit as st
 
 
-def compute_d_spacing(crystal_type, a, c, h, k, l):
-    if h == 0 and k == 0 and l == 0:
-        raise ValueError("Miller indices (0, 0, 0) are not valid.")
+# =========================
+# CALCULATIONS
+# =========================
 
-    if crystal_type in {"cubic", "bcc", "fcc"}:
-        return a / math.sqrt(h**2 + k**2 + l**2)
+def compute_two_probe(I, V, L, A, R_contact=0, R_wires=0):
+    if I == 0:
+        return None, None
 
-    if crystal_type == "tetragonal":
-        inv_d2 = (h**2 + k**2) / (a**2) + (l**2) / (c**2)
-        return 1 / math.sqrt(inv_d2)
+    R_measured = V / I
+    R_sample = R_measured - (2 * R_contact + R_wires)
+    rho = R_sample * (A / L)
 
-    if crystal_type == "hexagonal":
-        inv_d2 = (4 / 3) * (h**2 + h * k + k**2) / (a**2) + (l**2) / (c**2)
-        return 1 / math.sqrt(inv_d2)
-
-    raise ValueError("Unsupported crystal type.")
+    return R_sample, rho
 
 
-def reflection_rule(crystal_type, h, k, l):
-    h, k, l = abs(h), abs(k), abs(l)
-
-    if crystal_type == "bcc":
-        allowed = (h + k + l) % 2 == 0
-        msg = "Allowed for BCC only when h + k + l is even."
-        return allowed, msg
-
-    if crystal_type == "fcc":
-        allowed = h % 2 == k % 2 == l % 2
-        msg = "Allowed for FCC only when h, k, l are all even or all odd."
-        return allowed, msg
-
-    return True, "Reflection allowed."
-
-
-def compute_theta(wavelength, d, order=1):
-    ratio = order * wavelength / (2 * d)
-    if ratio > 1:
+def compute_four_probe(I, V, s, t=None):
+    if I == 0:
         return None
-    return math.degrees(math.asin(ratio))
+
+    if t is None:
+        # Bulk
+        rho = 2 * math.pi * s * (V / I)
+    else:
+        # Thin film
+        rho = (math.pi / math.log(2)) * t * (V / I)
+
+    return rho
 
 
-def plot_xrd_diagram(theta_deg, d_spacing):
-    theta = math.radians(theta_deg)
-    length = 3.0
+# =========================
+# GRAPH
+# =========================
 
-    x_in = -length * math.cos(theta)
-    y_in = length * math.sin(theta)
-    x_out = length * math.cos(theta)
-    y_out = length * math.sin(theta)
+def plot_vi_graph(currents, voltages):
+    fig, ax = plt.subplots()
 
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ax.plot(currents, voltages, 'o-', label="Experimental Data")
+    
+    # Linear fit
+    coeffs = np.polyfit(currents, voltages, 1)
+    fit_line = np.poly1d(coeffs)
+    ax.plot(currents, fit_line(currents), '--', label=f"Slope (R) = {coeffs[0]:.2f} Ω")
 
-    ax.plot([-3.5, 3.5], [0, 0], color="black", lw=2)
-    ax.plot([-3.5, 3.5], [-0.9, -0.9], color="gray", lw=1.5)
-    ax.plot([0, 0], [-1.4, 2.5], linestyle="--", color="gray", lw=1)
+    ax.set_xlabel("Current (A)")
+    ax.set_ylabel("Voltage (V)")
+    ax.set_title("V vs I Graph")
+    ax.legend()
+    ax.grid()
 
-    ax.annotate(
-        "",
-        xy=(0, 0),
-        xytext=(x_in, y_in),
-        arrowprops=dict(arrowstyle="->", lw=2.5, color="#1f77b4"),
-    )
-    ax.annotate(
-        "",
-        xy=(x_out, y_out),
-        xytext=(0, 0),
-        arrowprops=dict(arrowstyle="->", lw=2.5, color="#d62728"),
-    )
+    return fig, coeffs[0]
 
-    ax.add_patch(
-        Arc((0, 0), 1.4, 1.4, angle=0, theta1=0, theta2=theta_deg, color="#d62728", lw=2)
-    )
-    ax.add_patch(
-        Arc(
-            (0, 0),
-            1.4,
-            1.4,
-            angle=0,
-            theta1=180 - theta_deg,
-            theta2=180,
-            color="#1f77b4",
-            lw=2,
-        )
-    )
 
-    ax.text(0.7, 0.18, r"$\theta$", fontsize=13)
-    ax.text(-0.95, 0.18, r"$\theta$", fontsize=13)
+# =========================
+# DIAGRAMS
+# =========================
 
-    ax.annotate(
-        "",
-        xy=(2.7, 0),
-        xytext=(2.7, -0.9),
-        arrowprops=dict(arrowstyle="<->", lw=1.8, color="green"),
-    )
-    ax.text(2.85, -0.45, f"d = {d_spacing:.4f}", color="green", va="center", fontsize=11)
+def draw_two_probe():
+    fig, ax = plt.subplots()
 
-    ax.text(-2.8, 2.0, "Incident ray", color="#1f77b4", fontsize=11)
-    ax.text(1.5, 2.0, "Reflected ray", color="#d62728", fontsize=11)
-    ax.text(0.1, 2.15, "Normal", color="gray", fontsize=10)
-    ax.text(-3.3, 0.08, "Crystal plane", fontsize=10)
-    ax.text(-3.3, -0.82, "Crystal plane", fontsize=10, color="gray")
+    # Sample
+    ax.add_patch(plt.Rectangle((0, 0), 6, 1, color='lightgray'))
 
-    ax.set_xlim(-3.5, 3.5)
-    ax.set_ylim(-1.4, 2.5)
-    ax.set_aspect("equal")
-    ax.axis("off")
+    # Probes
+    ax.plot([1, 1], [1, 2], 'k', lw=2)
+    ax.plot([5, 5], [1, 2], 'k', lw=2)
+
+    # Labels
+    ax.text(1, 2.2, "I & V", ha='center')
+    ax.text(5, 2.2, "I & V", ha='center')
+    ax.text(2.5, -0.5, "Sample", fontsize=10)
+
+    ax.set_xlim(-1, 7)
+    ax.set_ylim(-1, 3)
+    ax.axis('off')
+
     return fig
 
 
-def formula_text(crystal_type):
-    if crystal_type in {"cubic", "bcc", "fcc"}:
-        return r"\frac{1}{d^2}=\frac{h^2+k^2+l^2}{a^2}"
-    if crystal_type == "tetragonal":
-        return r"\frac{1}{d^2}=\frac{h^2+k^2}{a^2}+\frac{l^2}{c^2}"
-    if crystal_type == "hexagonal":
-        return r"\frac{1}{d^2}=\frac{4}{3}\frac{h^2+hk+k^2}{a^2}+\frac{l^2}{c^2}"
-    return ""
+def draw_four_probe():
+    fig, ax = plt.subplots()
+
+    # Sample
+    ax.add_patch(plt.Rectangle((0, 0), 6, 1, color='lightgray'))
+
+    # Probes
+    x_positions = [1, 2.5, 3.5, 5]
+    labels = ["I+", "V", "V", "I-"]
+
+    for x, label in zip(x_positions, labels):
+        ax.plot([x, x], [1, 2], 'k', lw=2)
+        ax.text(x, 2.2, label, ha='center')
+
+    ax.text(2.5, -0.5, "Sample", fontsize=10)
+
+    ax.set_xlim(-1, 7)
+    ax.set_ylim(-1, 3)
+    ax.axis('off')
+
+    return fig
 
 
-def get_lattice_info(crystal_type, a, c):
-    """Return lattice content information as outputs"""
-    info = {
-        "cubic": {
-            "name": "Simple Cubic (SC)",
-            "atoms_per_cell": 1,
-            "coordination_number": 6,
-            "packing_factor": "52.4%",
-            "structure": "Body-centered cube with atoms at corners only"
-        },
-        "bcc": {
-            "name": "Body-Centered Cubic (BCC)",
-            "atoms_per_cell": 2,
-            "coordination_number": 8,
-            "packing_factor": "68.2%",
-            "structure": "Atoms at corners + 1 atom at body center"
-        },
-        "fcc": {
-            "name": "Face-Centered Cubic (FCC)",
-            "atoms_per_cell": 4,
-            "coordination_number": 12,
-            "packing_factor": "74.0%",
-            "structure": "Atoms at corners + 1 atom at each face center"
-        },
-        "tetragonal": {
-            "name": "Tetragonal",
-            "atoms_per_cell": "Varies",
-            "coordination_number": "Varies",
-            "packing_factor": "Varies",
-            "structure": f"Lattice: a = {a:.4f}, c = {c:.4f}, c/a ratio = {c/a:.4f}"
-        },
-        "hexagonal": {
-            "name": "Hexagonal Close-Packed (HCP)",
-            "atoms_per_cell": 6,
-            "coordination_number": 12,
-            "packing_factor": "74.0%",
-            "structure": f"Lattice: a = {a:.4f}, c = {c:.4f}, c/a ratio = {c/a:.4f}"
-        }
-    }
-    return info.get(crystal_type, {})
-
+# =========================
+# MAIN APP
+# =========================
 
 def main():
-    st.set_page_config(page_title="XRD Simulator", layout="wide")
-    st.title("XRD Simulator Using Bragg's Law")
+    st.set_page_config(page_title="Probe Method Simulator", layout="centered")
 
-    st.markdown(r"Bragg's law:  $n\lambda = 2d\sin\theta$")
-    st.caption("This app uses first-order diffraction: n = 1")
+    st.title("Two-Probe & Four-Probe Resistivity Simulator")
 
-    with st.expander("Set Inputs", expanded=True):
-        col1, col2 = st.columns(2)
+    st.sidebar.header("Inputs")
 
-        with col1:
-            wavelength = st.number_input(
-                "Wavelength (Angstrom)",
-                min_value=0.0001,
-                value=1.5406,
-                step=0.0001,
-                format="%.4f",
-            )
+    method = st.sidebar.selectbox("Select Method", ["Two-Probe", "Four-Probe"])
 
-            crystal_type = st.selectbox(
-                "Crystal Type",
-                ["cubic", "bcc", "fcc", "tetragonal", "hexagonal"],
-            )
+    I = st.sidebar.number_input("Current (A)", value=1.0)
+    V = st.sidebar.number_input("Voltage (V)", value=2.0)
 
-            # Miller indices as INPUTS (only in input section)
-            st.subheader("Miller Indices (hkl)")
-            m_col1, m_col2, m_col3 = st.columns(3)
-            with m_col1:
-                h = int(st.number_input("h", value=1, step=1))
-            with m_col2:
-                k = int(st.number_input("k", value=1, step=1))
-            with m_col3:
-                l = int(st.number_input("l", value=1, step=1))
+    st.sidebar.subheader("Sample Parameters")
+    L = st.sidebar.number_input("Length (m)", value=0.5)
+    A = st.sidebar.number_input("Area (m²)", value=1e-6)
 
-        with col2:
-            a = st.number_input(
-                "Lattice Constant a (Angstrom)",
-                min_value=0.0001,
-                value=4.0000,
-                step=0.0001,
-                format="%.4f",
-            )
-
-            c = a
-            if crystal_type in {"tetragonal", "hexagonal"}:
-                c = st.number_input(
-                    "Lattice Constant c (Angstrom)",
-                    min_value=0.0001,
-                    value=5.0000,
-                    step=0.0001,
-                    format="%.4f",
-                )
+    currents = st.sidebar.text_input("Currents (comma separated)", "1,2,3,4,5")
+    voltages = st.sidebar.text_input("Voltages (comma separated)", "2,4,6,8,10")
 
     try:
-        d_spacing = compute_d_spacing(crystal_type, a, c, h, k, l)
-        theta_deg = compute_theta(wavelength, d_spacing)
-        allowed, rule_message = reflection_rule(crystal_type, h, k, l)
-        lattice_info = get_lattice_info(crystal_type, a, c)
+        currents = np.array([float(i) for i in currents.split(",")])
+        voltages = np.array([float(v) for v in voltages.split(",")])
+    except:
+        st.error("Invalid data format")
+        return
 
-        # ===== OUTPUTS / RESULTS SECTION =====
+    st.subheader("Results")
 
-        st.markdown("---")
-        st.subheader("Outputs / Results")
+    if method == "Two-Probe":
+        R_contact = st.sidebar.number_input("Contact Resistance (Ω)", value=0.5)
+        R_wires = st.sidebar.number_input("Wire Resistance (Ω)", value=0.2)
 
-        # Miller Indices as OUTPUTS
-        st.markdown("#### Miller Indices (hkl)")
-        miller_col1, miller_col2, miller_col3 = st.columns(3)
-        miller_col1.metric("h", str(h))
-        miller_col2.metric("k", str(k))
-        miller_col3.metric("l", str(l))
-        st.caption(f"Plane designation: ({h}{k}{l})")
+        R, rho = compute_two_probe(I, V, L, A, R_contact, R_wires)
 
-        # Lattice Content as OUTPUTS
-        st.markdown("#### Lattice Content")
-        lat_col1, lat_col2, lat_col3 = st.columns(3)
-        lat_col1.metric("Crystal Structure", lattice_info.get("name", "N/A"))
-        lat_col2.metric("Atoms/Unit Cell", str(lattice_info.get("atoms_per_cell", "N/A")))
-        lat_col3.metric("Coordination #", str(lattice_info.get("coordination_number", "N/A")))
+        st.metric("Sample Resistance (Ω)", f"{R:.3f}")
+        st.metric("Resistivity (Ω·m)", f"{rho:.3e}")
 
-        lat_col4, lat_col5, lat_col6 = st.columns(3)
-        lat_col4.metric("Packing Factor", lattice_info.get("packing_factor", "N/A"))
-        lat_col5.metric("Lattice a (A)", f"{a:.4f}")
-        if crystal_type in {"tetragonal", "hexagonal"}:
-            lat_col6.metric("Lattice c (A)", f"{c:.4f}")
+        st.latex(r"R_{total} = R_{sample} + 2R_{contact} + R_{wires}")
+        st.latex(r"\rho = R \frac{A}{L}")
+
+        st.pyplot(draw_two_probe())
+
+    else:
+        s = st.sidebar.number_input("Probe Spacing (m)", value=0.002)
+        thin = st.sidebar.checkbox("Thin Film")
+
+        if thin:
+            t = st.sidebar.number_input("Thickness (m)", value=1e-6)
+            rho = compute_four_probe(I, V, s, t)
+            st.latex(r"\rho = \frac{\pi}{\ln(2)} t \frac{V}{I}")
         else:
-            lat_col6.metric("Lattice c (A)", "Not used")
+            rho = compute_four_probe(I, V, s)
+            st.latex(r"\rho = 2\pi s \frac{V}{I}")
 
-        st.info(f"**Structure:** {lattice_info.get('structure', 'N/A')}")
+        st.metric("Resistivity (Ω·m)", f"{rho:.3e}")
 
-        # XRD Results
-        st.markdown("#### XRD Analysis Results")
-        st.latex(formula_text(crystal_type))
+        st.pyplot(draw_four_probe())
 
-        if crystal_type in {"bcc", "fcc"}:
-            st.info(
-                "For BCC and FCC, the d-spacing formula is the same as cubic; "
-                "selection rules determine whether the reflection is allowed."
-            )
+    st.subheader("V vs I Graph")
+    fig, slope = plot_vi_graph(currents, voltages)
+    st.pyplot(fig)
 
-        result_col1, result_col2, result_col3 = st.columns(3)
-        result_col1.metric("d-spacing (Angstrom)", f"{d_spacing:.4f}")
+    st.metric("Slope (Resistance Ω)", f"{slope:.2f}")
 
-        if theta_deg is None:
-            result_col2.metric("Theta (deg)", "No solution")
-            result_col3.metric("2Theta (deg)", "No solution")
-            st.error("No real Bragg angle exists because wavelength > 2d for the chosen values.")
-        else:
-            result_col2.metric("Theta (deg)", f"{theta_deg:.3f}")
-            result_col3.metric("2Theta (deg)", f"{2 * theta_deg:.3f}")
+    st.info("Four-Probe method eliminates contact resistance, making it more accurate.")
 
-            fig = plot_xrd_diagram(theta_deg, d_spacing)
-            st.markdown("#### Diffraction Diagram")
-            st.pyplot(fig)
-
-        if allowed:
-            st.success(rule_message)
-        else:
-            st.warning(f"{rule_message} This peak is systematically absent for the selected structure.")
-
-    except ValueError as error:
-        st.error(str(error))
-
+# =========================
 
 if __name__ == "__main__":
     main()
