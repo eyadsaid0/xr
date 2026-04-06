@@ -124,25 +124,139 @@ def formula_text(crystal_type):
     return ""
 
 
+def get_lattice_info(crystal_type, a, c):
+    """Return lattice content information as outputs"""
+    info = {
+        "cubic": {
+            "name": "Simple Cubic (SC)",
+            "atoms_per_cell": 1,
+            "coordination_number": 6,
+            "packing_factor": "52.4%",
+            "structure": "Body-centered cube with atoms at corners only"
+        },
+        "bcc": {
+            "name": "Body-Centered Cubic (BCC)",
+            "atoms_per_cell": 2,
+            "coordination_number": 8,
+            "packing_factor": "68.2%",
+            "structure": "Atoms at corners + 1 atom at body center"
+        },
+        "fcc": {
+            "name": "Face-Centered Cubic (FCC)",
+            "atoms_per_cell": 4,
+            "coordination_number": 12,
+            "packing_factor": "74.0%",
+            "structure": "Atoms at corners + 1 atom at each face center"
+        },
+        "tetragonal": {
+            "name": "Tetragonal",
+            "atoms_per_cell": "Varies",
+            "coordination_number": "Varies",
+            "packing_factor": "Varies",
+            "structure": f"Lattice: a = {a:.4f}, c = {c:.4f}, c/a ratio = {c/a:.4f}"
+        },
+        "hexagonal": {
+            "name": "Hexagonal Close-Packed (HCP)",
+            "atoms_per_cell": 6,
+            "coordination_number": 12,
+            "packing_factor": "74.0%",
+            "structure": f"Lattice: a = {a:.4f}, c = {c:.4f}, c/a ratio = {c/a:.4f}"
+        }
+    }
+    return info.get(crystal_type, {})
+
+
 def main():
-    st.set_page_config(page_title="XRD Simulator", layout="centered")
+    st.set_page_config(page_title="XRD Simulator", layout="wide")
     st.title("XRD Simulator Using Bragg's Law")
 
     st.markdown(r"Bragg's law:  $n\lambda = 2d\sin\theta$")
     st.caption("This app uses first-order diffraction: n = 1")
 
-    wavelength = 1.5406
-    crystal_type = "cubic"
-    a = 4.0000
-    c = a
-    h, k, l = 1, 1, 1
+    with st.expander("Set Inputs", expanded=True):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            wavelength = st.number_input(
+                "Wavelength (Angstrom)",
+                min_value=0.0001,
+                value=1.5406,
+                step=0.0001,
+                format="%.4f",
+            )
+
+            crystal_type = st.selectbox(
+                "Crystal Type",
+                ["cubic", "bcc", "fcc", "tetragonal", "hexagonal"],
+            )
+
+            # Miller indices as INPUTS (only in input section)
+            st.subheader("Miller Indices (hkl)")
+            m_col1, m_col2, m_col3 = st.columns(3)
+            with m_col1:
+                h = int(st.number_input("h", value=1, step=1))
+            with m_col2:
+                k = int(st.number_input("k", value=1, step=1))
+            with m_col3:
+                l = int(st.number_input("l", value=1, step=1))
+
+        with col2:
+            a = st.number_input(
+                "Lattice Constant a (Angstrom)",
+                min_value=0.0001,
+                value=4.0000,
+                step=0.0001,
+                format="%.4f",
+            )
+
+            c = a
+            if crystal_type in {"tetragonal", "hexagonal"}:
+                c = st.number_input(
+                    "Lattice Constant c (Angstrom)",
+                    min_value=0.0001,
+                    value=5.0000,
+                    step=0.0001,
+                    format="%.4f",
+                )
 
     try:
         d_spacing = compute_d_spacing(crystal_type, a, c, h, k, l)
         theta_deg = compute_theta(wavelength, d_spacing)
         allowed, rule_message = reflection_rule(crystal_type, h, k, l)
+        lattice_info = get_lattice_info(crystal_type, a, c)
 
-        st.subheader("Results")
+        # ===== OUTPUTS / RESULTS SECTION =====
+
+        st.markdown("---")
+        st.subheader("Outputs / Results")
+
+        # Miller Indices as OUTPUTS
+        st.markdown("#### Miller Indices (hkl)")
+        miller_col1, miller_col2, miller_col3 = st.columns(3)
+        miller_col1.metric("h", str(h))
+        miller_col2.metric("k", str(k))
+        miller_col3.metric("l", str(l))
+        st.caption(f"Plane designation: ({h}{k}{l})")
+
+        # Lattice Content as OUTPUTS
+        st.markdown("#### Lattice Content")
+        lat_col1, lat_col2, lat_col3 = st.columns(3)
+        lat_col1.metric("Crystal Structure", lattice_info.get("name", "N/A"))
+        lat_col2.metric("Atoms/Unit Cell", str(lattice_info.get("atoms_per_cell", "N/A")))
+        lat_col3.metric("Coordination #", str(lattice_info.get("coordination_number", "N/A")))
+
+        lat_col4, lat_col5, lat_col6 = st.columns(3)
+        lat_col4.metric("Packing Factor", lattice_info.get("packing_factor", "N/A"))
+        lat_col5.metric("Lattice a (A)", f"{a:.4f}")
+        if crystal_type in {"tetragonal", "hexagonal"}:
+            lat_col6.metric("Lattice c (A)", f"{c:.4f}")
+        else:
+            lat_col6.metric("Lattice c (A)", "Not used")
+
+        st.info(f"**Structure:** {lattice_info.get('structure', 'N/A')}")
+
+        # XRD Results
+        st.markdown("#### XRD Analysis Results")
         st.latex(formula_text(crystal_type))
 
         if crystal_type in {"bcc", "fcc"}:
@@ -163,16 +277,8 @@ def main():
             result_col3.metric("2Theta (deg)", f"{2 * theta_deg:.3f}")
 
             fig = plot_xrd_diagram(theta_deg, d_spacing)
-            st.subheader("Diffraction Diagram")
+            st.markdown("#### Diffraction Diagram")
             st.pyplot(fig)
-
-        st.subheader("Details")
-        st.write(f"Crystal type: **{crystal_type.upper()}**")
-        st.write(f"Miller indices: **({h} {k} {l})**")
-        st.write(f"Wavelength lambda = **{wavelength:.4f} Angstrom**")
-        st.write(f"Lattice constant a = **{a:.4f} Angstrom**")
-        if crystal_type in {"tetragonal", "hexagonal"}:
-            st.write(f"Lattice constant c = **{c:.4f} Angstrom**")
 
         if allowed:
             st.success(rule_message)
