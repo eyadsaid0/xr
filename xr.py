@@ -125,76 +125,22 @@ def formula_text(crystal_type):
 
 
 def main():
-    st.set_page_config(page_title="XRD Simulator", layout="wide")
+    st.set_page_config(page_title="XRD Simulator", layout="centered")
     st.title("XRD Simulator Using Bragg's Law")
 
     st.markdown(r"Bragg's law:  $n\lambda = 2d\sin\theta$")
     st.caption("This app uses first-order diffraction: n = 1")
 
-    with st.expander("Set Inputs", expanded=True):
-        top_left, top_right = st.columns(2)
-
-        with top_left:
-            wavelength = st.number_input(
-                "Wavelength (Angstrom)",
-                min_value=0.0001,
-                value=1.5406,
-                step=0.0001,
-                format="%.4f",
-            )
-
-            crystal_type = st.selectbox(
-                "Crystal Type",
-                ["cubic", "bcc", "fcc", "tetragonal", "hexagonal"],
-            )
-
-        with top_right:
-            a = st.number_input(
-                "Lattice Constant a (Angstrom)",
-                min_value=0.0001,
-                value=4.0000,
-                step=0.0001,
-                format="%.4f",
-            )
-
-            c = a
-            if crystal_type in {"tetragonal", "hexagonal"}:
-                c = st.number_input(
-                    "Lattice Constant c (Angstrom)",
-                    min_value=0.0001,
-                    value=5.0000,
-                    step=0.0001,
-                    format="%.4f",
-                )
-
-        st.subheader("Miller Indices")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            h = int(st.number_input("h", value=1, step=1))
-        with col2:
-            k = int(st.number_input("k", value=1, step=1))
-        with col3:
-            l = int(st.number_input("l", value=1, step=1))
+    wavelength = 1.5406
+    crystal_type = "cubic"
+    a = 4.0000
+    c = a
+    h, k, l = 1, 1, 1
 
     try:
         d_spacing = compute_d_spacing(crystal_type, a, c, h, k, l)
         theta_deg = compute_theta(wavelength, d_spacing)
         allowed, rule_message = reflection_rule(crystal_type, h, k, l)
-
-        st.subheader("Selected Inputs")
-        input_col1, input_col2, input_col3, input_col4 = st.columns(4)
-        input_col1.metric("Wavelength (Angstrom)", f"{wavelength:.4f}")
-        input_col2.metric("Crystal Type", crystal_type.upper())
-        input_col3.metric("Lattice Constant a", f"{a:.4f}")
-        if crystal_type in {"tetragonal", "hexagonal"}:
-            input_col4.metric("Lattice Constant c", f"{c:.4f}")
-        else:
-            input_col4.metric("Lattice Constant c", "Not used")
-
-        miller_col1, miller_col2, miller_col3 = st.columns(3)
-        miller_col1.metric("h", str(h))
-        miller_col2.metric("k", str(k))
-        miller_col3.metric("l", str(l))
 
         st.subheader("Results")
         st.latex(formula_text(crystal_type))
@@ -219,6 +165,14 @@ def main():
             fig = plot_xrd_diagram(theta_deg, d_spacing)
             st.subheader("Diffraction Diagram")
             st.pyplot(fig)
+
+        st.subheader("Details")
+        st.write(f"Crystal type: **{crystal_type.upper()}**")
+        st.write(f"Miller indices: **({h} {k} {l})**")
+        st.write(f"Wavelength lambda = **{wavelength:.4f} Angstrom**")
+        st.write(f"Lattice constant a = **{a:.4f} Angstrom**")
+        if crystal_type in {"tetragonal", "hexagonal"}:
+            st.write(f"Lattice constant c = **{c:.4f} Angstrom**")
 
         if allowed:
             st.success(rule_message)
